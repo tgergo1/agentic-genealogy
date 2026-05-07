@@ -1,33 +1,40 @@
 # Agentic Genealogy
 
-An interactive, AI-assisted genealogy research workbench. Combines the
+An interactive, AI-assisted genealogy research workbench. Pairs
+[WikiTree](https://www.wikitree.com/) (free, no key) and the
 [FamilySearch API](https://developers.familysearch.org/main/docs/getting-started)
-with Anthropic Claude or OpenAI to render aesthetic family trees, analyze
-sources to the rigor of the Genealogical Proof Standard, import / export
-GEDCOM, and break through brick walls — all from your browser, with your
-data staying on your machine.
+(optional) with Anthropic Claude or OpenAI to render aesthetic family
+trees, analyze sources to the rigor of the Genealogical Proof Standard,
+import / export GEDCOM, and break through brick walls — all from your
+browser, with your data staying on your machine.
 
 ## What it does
 
-- **Bring-your-own-keys.** API keys for FamilySearch and Claude/OpenAI live
-  only in your browser's IndexedDB. Nothing is proxied through a server.
-- **FamilySearch OAuth (PKCE).** Public-client authorization code flow with
-  S256 PKCE — no client secret required. Discovered automatically against
-  `https://ident.familysearch.org/.well-known/openid-configuration`.
-- **Aesthetic pedigree renderer.** d3-hierarchy layout with smooth pan/zoom,
-  generation-aligned cards, and ancestor/descendant toggles up to six
-  generations.
+- **Works out of the box, no genealogy-API keys required.** WikiTree's
+  public API is free, anonymous, browser-friendly, and built into the app.
+  You only need an AI key (Claude or OpenAI) to drive the agent.
+- **WikiTree as a first-class data source.** Search profiles, fetch
+  relatives, pull up to 10 generations of ancestors, read full biographies.
+- **FamilySearch as an optional power-user surface.** If you've been
+  approved through their
+  [Compatible Solution Program](https://www.familysearch.org/developers/csp),
+  paste in your app key and connect via OAuth 2.0 (PKCE). If not — that's
+  fine, the rest of the app is fully functional.
+- **Bring-your-own-keys for AI.** Claude or OpenAI keys live only in your
+  browser's IndexedDB. Calls go directly browser → provider, no proxy.
+- **Aesthetic pedigree renderer.** d3-hierarchy layout with smooth
+  pan/zoom, generation-aligned cards, and ancestor/descendant toggles up
+  to six generations.
 - **GEDCOM 5.5.1 import/export.** A pragmatic subset that round-trips
   names, sex, birth/death/marriage facts, parent-child links, sources, and
-  notes.
-- **Agentic researcher.** The AI can call tools — read your local tree,
-  search FamilySearch persons and historical records, fetch ancestry,
+  notes — so you can bring in trees from Ancestry, MyHeritage,
+  RootsMagic, or anywhere else.
+- **Agentic researcher.** The AI can call tools to read your local tree,
+  search WikiTree, search FamilySearch (when configured), fetch ancestry,
   pull sources, and import remote records into your working tree.
 - **Expert prompt library.** Five GPS-aligned templates: hypothesis
   generation, source analysis, brick-wall plans with FAN-club suggestions,
   conflict resolution, and chronological timelines.
-- **Live source viewer.** Each person panel shows attached sources with
-  citations and links back to the original record.
 
 ## Quick start
 
@@ -41,32 +48,37 @@ first time so you can paste your keys.
 
 ### Get your keys
 
-1. **FamilySearch app key.** Sign in at
-   [developers.familysearch.org](https://developers.familysearch.org/) →
-   "My apps" → register a new app. Choose the **Web** type, set the
-   redirect URI to `http://localhost:5173/auth/familysearch/callback`,
-   and copy the app key into Settings → FamilySearch → App key.
-2. **Claude API key.** Get one from
+The only key you actually need is an AI key. Genealogy-data access works
+without keys via WikiTree.
+
+1. **Claude API key.** Get one from
    [console.anthropic.com](https://console.anthropic.com/). Paste into
    Settings → AI provider, choose Anthropic, pick a model
    (Sonnet 4.6 is the default; Opus 4.7 for hard reasoning).
-3. **OpenAI API key (optional).** From
+2. **OpenAI API key (optional).** From
    [platform.openai.com](https://platform.openai.com/). Pick OpenAI in
    Settings if you prefer GPT-5 or GPT-4.1. Note OpenAI does not officially
    permit browser CORS to `api.openai.com`; if it's blocked, set Base URL
    to a local proxy.
-
-### Connect FamilySearch
-
-Click **Connect FamilySearch** in Settings. You'll be sent to FamilySearch
-to sign in, then bounced back to `/auth/familysearch/callback` where the
-PKCE token exchange completes. The token (and refresh token, if you grant
-`offline_access`) is stored locally in IndexedDB.
+3. **FamilySearch app key (optional, advanced).** FamilySearch's full API
+   is gated behind the
+   [Compatible Solution Program](https://www.familysearch.org/developers/csp),
+   which most individual hobbyists can't pass. If you have or can obtain
+   an app key, register a Web-type app at
+   [developers.familysearch.org](https://developers.familysearch.org/),
+   set the redirect URI to
+   `http://localhost:5173/auth/familysearch/callback`, paste the app key
+   into Settings → FamilySearch, and click **Connect FamilySearch**.
 
 ### Build a tree
 
-- **Pull from FamilySearch.** Toolbar → "My FamilySearch" loads your
-  person; "Pull ancestry" walks 5 generations up.
+- **Pull from WikiTree.** Toolbar → "WikiTree person" prompts for a
+  WikiTree ID like `Smith-1` (find it in the URL of a WikiTree profile)
+  and pulls that person plus immediate relatives. "WikiTree ancestry"
+  walks up to 5 generations. WikiTree IDs become this app's primary
+  internal IDs, so the agent can keep working with them seamlessly.
+- **Pull from FamilySearch** (only if connected). Toolbar gains "My
+  FamilySearch" and "FS ancestry" buttons after a successful OAuth.
 - **Import GEDCOM.** Toolbar → "Import GEDCOM". A sample is at
   [samples/family.ged](samples/family.ged).
 - **Click around.** Selecting a person on the tree, person list, or
@@ -87,7 +99,8 @@ PKCE token exchange completes. The token (and refresh token, if you grant
 ```
 src/
   lib/
-    familysearch.ts       OAuth (PKCE) + REST client + GEDCOM-X subtypes
+    wikitree.ts           Free WikiTree API client + mapping
+    familysearch.ts       Optional: OAuth (PKCE) + REST client + GEDCOM-X
     gedcomx-mapper.ts     GEDCOM-X → internal model
     gedcom.ts             GEDCOM 5.5.1 import + export
     ai.ts                 Claude + OpenAI provider abstraction with tool use

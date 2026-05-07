@@ -8,10 +8,14 @@ import type { GenealogyState, Person } from '../types/genealogy';
 import { complete, type AiSettings } from './ai';
 import type { FamilySearchClient } from './familysearch';
 import { mapGedcomxRoot } from './gedcomx-mapper';
+import { WikiTree, mapWtProfiles, mapWtRelatives } from './wikitree';
 
 export interface AgentDeps {
   ai: AiSettings;
   fs?: FamilySearchClient;
+  // WikiTree is always available — no key required, anonymous public reads.
+  // Setting this flag to false disables it (e.g., user prefers offline-only).
+  wtEnabled?: boolean;
   getState: () => GenealogyState;
   setState: (mutate: (s: GenealogyState) => GenealogyState) => void;
   activePersonId?: string;
@@ -141,6 +145,94 @@ export const TOOLS: ToolDef[] = [
       type: 'object',
       properties: { pid: { type: 'string' } },
       required: ['pid'],
+    },
+  },
+  // ---------- WikiTree tools (free, no key required) ----------
+  {
+    name: 'wt_search_persons',
+    description:
+      'Search WikiTree for person profiles by name, dates, and locations. WikiTree is a free public collaborative tree — no API key needed. Returns up to 20 matches with WikiTree IDs (e.g. "Clemens-1").',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        FirstName: { type: 'string' },
+        LastName: { type: 'string' },
+        BirthDate: { type: 'string', description: 'YYYY-MM-DD or YYYY' },
+        DeathDate: { type: 'string' },
+        BirthLocation: { type: 'string' },
+        DeathLocation: { type: 'string' },
+        Gender: { type: 'string', enum: ['Male', 'Female'] },
+        fatherFirstName: { type: 'string' },
+        fatherLastName: { type: 'string' },
+        motherFirstName: { type: 'string' },
+        motherLastName: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'wt_get_profile',
+    description:
+      'Fetch a WikiTree profile by its WikiTree ID (e.g. "Clemens-1") with names, dates, locations, sex, and parent IDs.',
+    inputSchema: {
+      type: 'object',
+      properties: { key: { type: 'string' } },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'wt_get_relatives',
+    description:
+      'Fetch the parents, spouses, and children of a WikiTree person by ID. Returns a JSON bundle.',
+    inputSchema: {
+      type: 'object',
+      properties: { key: { type: 'string' } },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'wt_get_ancestors',
+    description:
+      'Fetch up to N generations of WikiTree ancestors for a person (default 4, max 10).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string' },
+        depth: { type: 'number' },
+      },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'wt_get_bio',
+    description:
+      'Fetch the long-form biography text for a WikiTree profile, in WikiTree wiki format.',
+    inputSchema: {
+      type: 'object',
+      properties: { key: { type: 'string' } },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'import_wt_person_into_tree',
+    description:
+      'Fetch a WikiTree person plus their immediate relatives (parents, spouses, children) and merge into the working tree.',
+    inputSchema: {
+      type: 'object',
+      properties: { key: { type: 'string' } },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'import_wt_ancestors_into_tree',
+    description:
+      'Fetch up to N generations of WikiTree ancestors and merge into the working tree.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        key: { type: 'string' },
+        depth: { type: 'number' },
+      },
+      required: ['key'],
     },
   },
 ];
@@ -277,6 +369,75 @@ export async function runTool(call: ToolCall, deps: AgentDeps): Promise<string> 
           ids: Object.keys(mapped.persons),
         });
       }
+
+      // ---------- WikiTree ----------
+      case 'wt_search_persons': {
+        if (deps.wtEnabled === false) return JSON.stringify({ error: 'WikiTree disabled' });
+        const matches = await WikiTree.searchPerson(input);
+        return JSON.stringify(
+          matches.map((p) => ({
+            wikiTreeId: p.Name,
+            name: [p.FirstName, p.MiddleName, p.LastNameAtBirth].filter(Boolean).join(' '),
+            birth: p.BirthDate || p.BirthDateDecade,
+            birthPlace: p.BirthLocation,
+            death: p.DeathDate || p.DeathDateDecade,
+            deathPlace: p.DeathLocation,
+            gender: p.Gender,
+            url: p.Name ? WikiTree.profileUrl(p.Name) : undefined,
+          })),
+        );
+      }
+      case 'wt_get_profile': {
+        if (deps.wtEnabled === false) return JSON.stringify({ error: 'WikiTree disabled' });
+        const profile = await WikiTree.getProfile(String(input.key));
+        return JSON.stringify(profile ?? { error: 'not found' });
+      }
+      case 'wt_get_relatives': {
+        if (deps.wtEnabled === false) return JSON.stringify({ error: 'WikiTree disabled' });
+        const bundle = await WikiTree.getRelatives(String(input.key));
+        return JSON.stringify(bundle ?? { error: 'not found' });
+      }
+      case 'wt_get_ancestors': {
+        if (deps.wtEnabled === false) return JSON.stringify({ error: 'WikiTree disabled' });
+        const list = await WikiTree.getAncestors(String(input.key), Number(input.depth ?? 4));
+        return JSON.stringify(list);
+      }
+      case 'wt_get_bio': {
+        if (deps.wtEnabled === false) return JSON.stringify({ error: 'WikiTree disabled' });
+        const bio = await WikiTree.getBio(String(input.key));
+        return JSON.stringify({ key: input.key, bio: bio ?? null });
+      }
+      case 'import_wt_person_into_tree': {
+        if (deps.wtEnabled === false) return JSON.stringify({ error: 'WikiTree disabled' });
+        const bundle = await WikiTree.getRelatives(String(input.key));
+        if (!bundle) return JSON.stringify({ error: 'not found' });
+        const mapped = mapWtRelatives(bundle);
+        deps.setState((s) => ({
+          ...s,
+          persons: { ...s.persons, ...mapped.persons },
+        }));
+        return JSON.stringify({
+          imported: Object.keys(mapped.persons).length,
+          ids: Object.keys(mapped.persons),
+        });
+      }
+      case 'import_wt_ancestors_into_tree': {
+        if (deps.wtEnabled === false) return JSON.stringify({ error: 'WikiTree disabled' });
+        const list = await WikiTree.getAncestors(
+          String(input.key),
+          Number(input.depth ?? 4),
+        );
+        const mapped = mapWtProfiles(list, String(input.key));
+        deps.setState((s) => ({
+          ...s,
+          persons: { ...s.persons, ...mapped.persons },
+        }));
+        return JSON.stringify({
+          imported: Object.keys(mapped.persons).length,
+          ids: Object.keys(mapped.persons),
+        });
+      }
+
       default:
         return JSON.stringify({ error: `unknown tool ${call.name}` });
     }
