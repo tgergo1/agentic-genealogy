@@ -13,16 +13,20 @@ import { useSettings } from '../../stores/settings';
 import { useToasts } from '../ui/Toast';
 import { FamilySearchClient } from '../../lib/familysearch';
 import { mapGedcomxRoot } from '../../lib/gedcomx-mapper';
+import { WikiTree, mapWtProfiles, mapWtRelatives } from '../../lib/wikitree';
 import type { Fact, Person } from '../../types/genealogy';
 import { cn } from '../../lib/utils';
 
+const WT_ID_RE = /^[A-Za-z][\w-]*-\d+$/;
+
 export function PersonPanel() {
   const { state, activePersonId, setActive, setState } = useTree();
-  const { fsConfig, fsTokens } = useSettings();
+  const { fsConfig, fsTokens, wikitree } = useSettings();
   const { push } = useToasts();
   const [busy, setBusy] = useState<string | null>(null);
 
   const person = activePersonId ? state.persons[activePersonId] : undefined;
+  const wtId = person && WT_ID_RE.test(person.id) ? person.id : undefined;
 
   const fs = useMemo(
     () => (fsTokens ? new FamilySearchClient(fsConfig, fsTokens) : undefined),
@@ -74,6 +78,43 @@ export function PersonPanel() {
     }
   }
 
+  async function pullFromWikiTree() {
+    if (!wtId) return;
+    setBusy('wt-pull');
+    try {
+      const bundle = await WikiTree.getRelatives(wtId);
+      if (!bundle) throw new Error(`Profile ${wtId} not found.`);
+      const mapped = mapWtRelatives(bundle);
+      setState((s) => ({
+        ...s,
+        persons: { ...s.persons, ...mapped.persons },
+      }));
+      push('success', `Refreshed ${Object.keys(mapped.persons).length} record(s) from WikiTree.`);
+    } catch (err) {
+      push('error', (err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function pullWikiTreeAncestry() {
+    if (!wtId) return;
+    setBusy('wt-ancestry');
+    try {
+      const list = await WikiTree.getAncestors(wtId, 5);
+      const mapped = mapWtProfiles(list, wtId);
+      setState((s) => ({
+        ...s,
+        persons: { ...s.persons, ...mapped.persons },
+      }));
+      push('success', `Imported ${Object.keys(mapped.persons).length} ancestor(s) from WikiTree.`);
+    } catch (err) {
+      push('error', (err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <header className="border-b border-ink-700/60 px-5 pb-4 pt-5">
@@ -96,25 +137,57 @@ export function PersonPanel() {
               FS:{person.fsId} <ExternalLink className="h-3 w-3" />
             </a>
           )}
+          {wtId && (
+            <a
+              href={WikiTree.profileUrl(wtId)}
+              target="_blank"
+              rel="noreferrer"
+              className="chip hover:border-parchment-400/60"
+            >
+              WT:{wtId} <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
-        {fs && person.fsId && (
+        {(fs && person.fsId) || (wikitree.enabled && wtId) ? (
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={pullFromFs}
-              disabled={busy != null}
-              className="btn-outline text-xs"
-            >
-              {busy === 'fs-pull' ? 'Refreshing…' : 'Refresh from FamilySearch'}
-            </button>
-            <button
-              onClick={pullAncestry}
-              disabled={busy != null}
-              className="btn-outline text-xs"
-            >
-              {busy === 'fs-ancestry' ? 'Loading…' : 'Pull 4 generations of ancestors'}
-            </button>
+            {fs && person.fsId && (
+              <>
+                <button
+                  onClick={pullFromFs}
+                  disabled={busy != null}
+                  className="btn-outline text-xs"
+                >
+                  {busy === 'fs-pull' ? 'Refreshing…' : 'Refresh from FamilySearch'}
+                </button>
+                <button
+                  onClick={pullAncestry}
+                  disabled={busy != null}
+                  className="btn-outline text-xs"
+                >
+                  {busy === 'fs-ancestry' ? 'Loading…' : 'Pull 4 gens (FS)'}
+                </button>
+              </>
+            )}
+            {wikitree.enabled && wtId && (
+              <>
+                <button
+                  onClick={pullFromWikiTree}
+                  disabled={busy != null}
+                  className="btn-outline text-xs"
+                >
+                  {busy === 'wt-pull' ? 'Refreshing…' : 'Refresh from WikiTree'}
+                </button>
+                <button
+                  onClick={pullWikiTreeAncestry}
+                  disabled={busy != null}
+                  className="btn-outline text-xs"
+                >
+                  {busy === 'wt-ancestry' ? 'Loading…' : 'Pull 5 gens (WikiTree)'}
+                </button>
+              </>
+            )}
           </div>
-        )}
+        ) : null}
       </header>
       <div className="flex-1 overflow-auto scrollbar-thin px-5 py-4">
         <SectionTitle icon={<CalendarDays className="h-4 w-4" />} title="Facts" />
