@@ -6,6 +6,7 @@ import {
   Trash2,
   Cloud,
   GitBranchPlus,
+  TreePine,
 } from 'lucide-react';
 import { useTree } from '../stores/tree';
 import { useSettings } from '../stores/settings';
@@ -14,6 +15,7 @@ import { exportGedcom, importGedcom } from '../lib/gedcom';
 import { downloadText } from '../lib/utils';
 import { FamilySearchClient } from '../lib/familysearch';
 import { mapGedcomxRoot } from '../lib/gedcomx-mapper';
+import { WikiTree, mapWtProfiles, mapWtRelatives } from '../lib/wikitree';
 
 export function Toolbar({
   onOpenSettings,
@@ -21,7 +23,7 @@ export function Toolbar({
   onOpenSettings: () => void;
 }) {
   const tree = useTree();
-  const { fsConfig, fsTokens } = useSettings();
+  const { fsConfig, fsTokens, wikitree } = useSettings();
   const { push } = useToasts();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -110,6 +112,74 @@ export function Toolbar({
     push('info', 'Tree cleared.');
   }
 
+  async function onPullWikiTreePerson() {
+    if (!wikitree.enabled) {
+      push('error', 'WikiTree is disabled in Settings.');
+      return;
+    }
+    const active = tree.activePersonId ? tree.state.persons[tree.activePersonId] : undefined;
+    const defaultKey =
+      active?.id && /^[\w-]+-\d+$/.test(active.id)
+        ? active.id
+        : wikitree.homeId ?? '';
+    const key = prompt(
+      'Enter a WikiTree ID (e.g. Smith-1) or leave blank to use the active person.',
+      defaultKey,
+    );
+    if (key == null) return;
+    const useKey = key.trim() || defaultKey;
+    if (!useKey) {
+      push('error', 'No WikiTree ID provided.');
+      return;
+    }
+    try {
+      const bundle = await WikiTree.getRelatives(useKey);
+      if (!bundle) throw new Error(`Profile "${useKey}" not found or private.`);
+      const mapped = mapWtRelatives(bundle);
+      tree.setState((s) => ({
+        ...s,
+        persons: { ...s.persons, ...mapped.persons },
+      }));
+      if (mapped.rootId) tree.setActive(mapped.rootId);
+      push(
+        'success',
+        `Imported ${Object.keys(mapped.persons).length} person(s) from WikiTree.`,
+      );
+    } catch (err) {
+      push('error', (err as Error).message);
+    }
+  }
+
+  async function onPullWikiTreeAncestry() {
+    if (!wikitree.enabled) {
+      push('error', 'WikiTree is disabled in Settings.');
+      return;
+    }
+    const active = tree.activePersonId ? tree.state.persons[tree.activePersonId] : undefined;
+    const defaultKey =
+      active?.id && /^[\w-]+-\d+$/.test(active.id)
+        ? active.id
+        : wikitree.homeId ?? '';
+    const key = prompt(
+      'Enter a WikiTree ID to anchor the ancestry on (e.g. Smith-1).',
+      defaultKey,
+    );
+    if (!key) return;
+    try {
+      const list = await WikiTree.getAncestors(key.trim(), 5);
+      if (list.length === 0) throw new Error(`No ancestry found for "${key}".`);
+      const mapped = mapWtProfiles(list, key.trim());
+      tree.setState((s) => ({
+        ...s,
+        persons: { ...s.persons, ...mapped.persons },
+      }));
+      tree.setActive(key.trim());
+      push('success', `Imported ${Object.keys(mapped.persons).length} ancestor(s) from WikiTree.`);
+    } catch (err) {
+      push('error', (err as Error).message);
+    }
+  }
+
   return (
     <div className="flex items-center gap-1 border-b border-ink-700/70 bg-ink-900/60 px-3 py-2 backdrop-blur-md">
       <div className="flex items-center gap-2 pr-3">
@@ -129,12 +199,31 @@ export function Toolbar({
         <button onClick={onExport} className="btn-ghost text-xs">
           <Download className="h-3.5 w-3.5" /> Export GEDCOM
         </button>
-        <button onClick={onPullCurrent} className="btn-ghost text-xs">
-          <Cloud className="h-3.5 w-3.5" /> My FamilySearch
+        <button
+          onClick={onPullWikiTreePerson}
+          className="btn-ghost text-xs"
+          title="Fetch a WikiTree profile and their immediate relatives"
+        >
+          <TreePine className="h-3.5 w-3.5" /> WikiTree person
         </button>
-        <button onClick={onPullAncestry} className="btn-ghost text-xs">
-          <GitBranchPlus className="h-3.5 w-3.5" /> Pull ancestry
+        <button
+          onClick={onPullWikiTreeAncestry}
+          className="btn-ghost text-xs"
+          title="Fetch up to 5 generations of WikiTree ancestors"
+        >
+          <GitBranchPlus className="h-3.5 w-3.5" /> WikiTree ancestry
         </button>
+        {fsTokens && (
+          <>
+            <div className="mx-1 h-4 w-px bg-ink-700" />
+            <button onClick={onPullCurrent} className="btn-ghost text-xs">
+              <Cloud className="h-3.5 w-3.5" /> My FamilySearch
+            </button>
+            <button onClick={onPullAncestry} className="btn-ghost text-xs">
+              <GitBranchPlus className="h-3.5 w-3.5" /> FS ancestry
+            </button>
+          </>
+        )}
       </div>
       <div className="ml-auto flex items-center gap-1">
         <button onClick={onResetTree} className="btn-ghost text-xs text-red-300 hover:text-red-200">

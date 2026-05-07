@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { ExternalLink, KeyRound, Plug, Unplug, Sparkles } from 'lucide-react';
+import {
+  ExternalLink,
+  KeyRound,
+  Plug,
+  Unplug,
+  Sparkles,
+  TreePine,
+} from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { useSettings } from '../../stores/settings';
 import { DEFAULT_MODELS, type AiProviderId } from '../../lib/ai';
@@ -146,20 +153,81 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
         </Section>
 
         <Section
-          icon={<KeyRound className="h-4 w-4" />}
-          title="FamilySearch developer credentials"
+          icon={<TreePine className="h-4 w-4" />}
+          title="WikiTree"
           subtitle={
             <>
-              Register your app at{' '}
+              Free, open, collaborative genealogy. No API key required —
+              public profiles are accessible anonymously. Your home ID below
+              is optional and only used for "Pull my ancestry".
+            </>
+          }
+        >
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="md:col-span-2 flex items-center gap-2">
+              <input
+                id="wt-enabled"
+                type="checkbox"
+                checked={settings.wikitree.enabled}
+                onChange={(e) => settings.setWikitree({ enabled: e.target.checked })}
+                className="h-4 w-4 accent-parchment-400"
+              />
+              <label htmlFor="wt-enabled" className="text-sm text-ink-200">
+                Enable WikiTree as a research source
+              </label>
+            </div>
+            <div className="md:col-span-2">
+              <div className="label mb-1">Your WikiTree ID (optional)</div>
+              <input
+                value={settings.wikitree.homeId ?? ''}
+                onChange={(e) => settings.setWikitree({ homeId: e.target.value })}
+                placeholder="e.g. Smith-1"
+                className="input"
+              />
+              <div className="mt-2 text-xs text-ink-400">
+                Find this in the URL of your WikiTree profile:{' '}
+                <span className="font-mono">
+                  wikitree.com/wiki/<b>Smith-1</b>
+                </span>
+                . Stays in your browser only.
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        <Section
+          icon={<KeyRound className="h-4 w-4" />}
+          title={
+            <span className="flex items-center gap-2">
+              FamilySearch
+              <span className="chip text-[10px]">advanced — requires approval</span>
+            </span>
+          }
+          subtitle={
+            <>
+              FamilySearch's full API is gated behind their{' '}
+              <a
+                href="https://www.familysearch.org/developers/csp"
+                target="_blank"
+                rel="noreferrer"
+                className="text-parchment-300 hover:underline inline-flex items-center gap-1"
+              >
+                Compatible Solution Program
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              . Most individual hobbyist developers won't have an app key —
+              that's fine, the rest of the app works without it. If you do
+              have one, register a redirect URI matching the one below at{' '}
               <a
                 href="https://developers.familysearch.org/"
                 target="_blank"
                 rel="noreferrer"
                 className="text-parchment-300 hover:underline inline-flex items-center gap-1"
               >
-                developers.familysearch.org <ExternalLink className="h-3 w-3" />
+                developers.familysearch.org
+                <ExternalLink className="h-3 w-3" />
               </a>
-              . Add a redirect URI exactly matching the one below.
+              .
             </>
           }
         >
@@ -238,7 +306,7 @@ function Section({
   children,
 }: {
   icon: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   subtitle?: React.ReactNode;
   children: React.ReactNode;
 }) {

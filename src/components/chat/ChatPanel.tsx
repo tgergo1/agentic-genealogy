@@ -13,7 +13,7 @@ import { cn } from '../../lib/utils';
 export function ChatPanel() {
   const { sessions, activeId, newSession, setActive, appendMessage, deleteSession } = useChats();
   const tree = useTree();
-  const { ai, fsConfig, fsTokens } = useSettings();
+  const { ai, fsConfig, fsTokens, wikitree } = useSettings();
   const { push } = useToasts();
   const [input, setInput] = useState('');
   const [running, setRunning] = useState(false);
@@ -51,8 +51,14 @@ export function ChatPanel() {
 
     // Compose system prompt: base + active person summary
     const activePerson = tree.activePersonId ? tree.state.persons[tree.activePersonId] : undefined;
+    const providersAvailable = [
+      wikitree.enabled ? 'WikiTree (free, no key, public profiles only)' : null,
+      fs ? 'FamilySearch (authenticated)' : null,
+    ].filter(Boolean);
     const systemContext: string = [
       BASE_RESEARCHER_SYSTEM,
+      `\n\nAVAILABLE EXTERNAL PROVIDERS: ${providersAvailable.join(', ') || 'none — work from the local tree only'}.`,
+      'Prefer WikiTree tools (wt_*) when no FamilySearch credentials are present. WikiTree IDs look like "Smith-1".',
       activePerson
         ? `\n\nACTIVE PERSON CONTEXT:\n${JSON.stringify(
             {
@@ -90,6 +96,7 @@ export function ChatPanel() {
         {
           ai,
           fs,
+          wtEnabled: wikitree.enabled,
           getState: () => tree.state,
           setState: tree.setState,
           activePersonId: tree.activePersonId,
