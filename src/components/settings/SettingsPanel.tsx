@@ -5,14 +5,17 @@ import {
   Plug,
   Unplug,
   Sparkles,
-  TreePine,
+  UserRound,
+  Globe,
 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { useSettings } from '../../stores/settings';
 import { DEFAULT_MODELS, type AiProviderId } from '../../lib/ai';
 import {
   startAuthFlow,
+  startUnauthenticatedSession,
   clearStoredTokens,
+  FS_ENV_LABEL,
   type FsEnvironment,
 } from '../../lib/familysearch';
 import { useToasts } from '../ui/Toast';
@@ -22,9 +25,12 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
   const { push } = useToasts();
   const [showAi, setShowAi] = useState(false);
   const [showFs, setShowFs] = useState(false);
+  const [busy, setBusy] = useState<'login' | 'unauth' | null>(null);
 
   const fsConnected = Boolean(settings.fsTokens?.accessToken);
   const aiConfigured = Boolean(settings.ai.apiKey);
+  const tokenScope = settings.fsTokens?.scope ?? '';
+  const isUnauthSession = tokenScope === '' || tokenScope === 'unauthenticated';
 
   async function handleConnectFs() {
     if (!settings.fsConfig.clientId) {
@@ -35,8 +41,33 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
       push('error', 'Set a redirect URI matching the one registered with FamilySearch.');
       return;
     }
-    const url = await startAuthFlow(settings.fsConfig);
-    window.location.href = url;
+    setBusy('login');
+    try {
+      const url = await startAuthFlow(settings.fsConfig);
+      window.location.href = url;
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleStartUnauth() {
+    if (!settings.fsConfig.clientId) {
+      push('error', 'Enter your FamilySearch app key (client ID) first.');
+      return;
+    }
+    setBusy('unauth');
+    try {
+      const tokens = await startUnauthenticatedSession(settings.fsConfig);
+      await settings.setFsTokens(tokens);
+      push(
+        'success',
+        'Unauthenticated session started. Public endpoints (search, places, date authority) are available.',
+      );
+    } catch (err) {
+      push('error', (err as Error).message);
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function handleDisconnectFs() {
@@ -153,86 +184,26 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
         </Section>
 
         <Section
-          icon={<TreePine className="h-4 w-4" />}
-          title="WikiTree"
-          subtitle={
-            <>
-              Free, open, collaborative genealogy. No API key required —
-              public profiles are accessible anonymously. Your home ID below
-              is optional and only used for "Pull my ancestry".
-            </>
-          }
-        >
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div className="md:col-span-2 flex items-center gap-2">
-              <input
-                id="wt-enabled"
-                type="checkbox"
-                checked={settings.wikitree.enabled}
-                onChange={(e) => settings.setWikitree({ enabled: e.target.checked })}
-                className="h-4 w-4 accent-parchment-400"
-              />
-              <label htmlFor="wt-enabled" className="text-sm text-ink-200">
-                Enable WikiTree as a research source
-              </label>
-            </div>
-            <div className="md:col-span-2">
-              <div className="label mb-1">Your WikiTree ID (optional)</div>
-              <input
-                value={settings.wikitree.homeId ?? ''}
-                onChange={(e) => settings.setWikitree({ homeId: e.target.value })}
-                placeholder="e.g. Smith-1"
-                className="input"
-              />
-              <div className="mt-2 text-xs text-ink-400">
-                Find this in the URL of your WikiTree profile:{' '}
-                <span className="font-mono">
-                  wikitree.com/wiki/<b>Smith-1</b>
-                </span>
-                . Stays in your browser only.
-              </div>
-            </div>
-          </div>
-        </Section>
-
-        <Section
           icon={<KeyRound className="h-4 w-4" />}
-          title={
-            <span className="flex items-center gap-2">
-              FamilySearch
-              <span className="chip text-[10px]">advanced — requires approval</span>
-            </span>
-          }
+          title="FamilySearch"
           subtitle={
             <>
-              FamilySearch's full API is gated behind their{' '}
+              Register a free app key at{' '}
               <a
-                href="https://www.familysearch.org/developers/csp"
+                href="https://www.familysearch.org/en/developers/docs/guides/getting-started-tutorial"
                 target="_blank"
                 rel="noreferrer"
                 className="text-parchment-300 hover:underline inline-flex items-center gap-1"
               >
-                Compatible Solution Program
-                <ExternalLink className="h-3 w-3" />
+                developers.familysearch.org <ExternalLink className="h-3 w-3" />
               </a>
-              . Most individual hobbyist developers won't have an app key —
-              that's fine, the rest of the app works without it. If you do
-              have one, register a redirect URI matching the one below at{' '}
-              <a
-                href="https://developers.familysearch.org/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-parchment-300 hover:underline inline-flex items-center gap-1"
-              >
-                developers.familysearch.org
-                <ExternalLink className="h-3 w-3" />
-              </a>
-              .
+              . The Integration sandbox is open to any registered developer;
+              Beta and Production access require additional approval.
             </>
           }
         >
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
+            <div className="md:col-span-2">
               <div className="label mb-1">Environment</div>
               <select
                 value={settings.fsConfig.environment}
@@ -243,11 +214,14 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                 }
                 className="input"
               >
-                <option value="production">Production (live data)</option>
-                <option value="integration">Integration (sandbox)</option>
+                {(['integration', 'beta', 'production'] as FsEnvironment[]).map((e) => (
+                  <option key={e} value={e}>
+                    {FS_ENV_LABEL[e]}
+                  </option>
+                ))}
               </select>
             </div>
-            <div>
+            <div className="md:col-span-2">
               <div className="label mb-1">App key (client ID)</div>
               <div className="flex gap-2">
                 <input
@@ -263,36 +237,52 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
               </div>
             </div>
             <div className="md:col-span-2">
-              <div className="label mb-1">Redirect URI</div>
+              <div className="label mb-1">Redirect URI (only for "Sign in" mode)</div>
               <input
                 value={settings.fsConfig.redirectUri}
                 onChange={(e) => settings.setFsConfig({ redirectUri: e.target.value })}
                 className="input"
               />
               <div className="mt-2 text-xs text-ink-400">
-                Must match the redirect URI registered with FamilySearch exactly.
+                Must match a redirect URI registered with the app key. Not
+                required if you only use the no-login session below.
               </div>
             </div>
           </div>
-          <div className="mt-4 flex items-center gap-3">
-            {fsConnected ? (
-              <button onClick={handleDisconnectFs} className="btn-outline">
-                <Unplug className="h-4 w-4" /> Disconnect
-              </button>
-            ) : (
-              <button onClick={handleConnectFs} className="btn-primary">
-                <Plug className="h-4 w-4" /> Connect FamilySearch
-              </button>
-            )}
-            <span className="text-xs text-ink-400">
-              {fsConnected
-                ? `Token expires in ${Math.max(
-                    0,
-                    Math.round(((settings.fsTokens?.expiresAt ?? 0) - Date.now()) / 60000),
-                  )} min`
-                : 'You will be redirected to sign in to FamilySearch.'}
-            </span>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <ModeCard
+              icon={<UserRound className="h-4 w-4" />}
+              title="Sign in to FamilySearch"
+              description="Full tree access for the signed-in user. Authorization Code with PKCE — no client secret. You'll be redirected to FamilySearch and back."
+              connected={fsConnected && !isUnauthSession}
+              busy={busy === 'login'}
+              onConnect={handleConnectFs}
+              onDisconnect={handleDisconnectFs}
+              connectLabel="Sign in"
+            />
+            <ModeCard
+              icon={<Globe className="h-4 w-4" />}
+              title="No-login session"
+              description="Anonymous read-only access to public endpoints (Person Search, Places, Date Authority, Person Matches Query). No FamilySearch account needed."
+              connected={fsConnected && isUnauthSession}
+              busy={busy === 'unauth'}
+              onConnect={handleStartUnauth}
+              onDisconnect={handleDisconnectFs}
+              connectLabel="Start session"
+            />
           </div>
+
+          {fsConnected && (
+            <div className="mt-3 text-xs text-ink-400">
+              Token expires in{' '}
+              {Math.max(
+                0,
+                Math.round(((settings.fsTokens?.expiresAt ?? 0) - Date.now()) / 60000),
+              )}{' '}
+              min · scope: {tokenScope || '(unauthenticated)'}
+            </div>
+          )}
         </Section>
       </div>
     </Modal>
@@ -323,5 +313,53 @@ function Section({
       </header>
       {children}
     </section>
+  );
+}
+
+function ModeCard({
+  icon,
+  title,
+  description,
+  connected,
+  busy,
+  connectLabel,
+  onConnect,
+  onDisconnect,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  connected: boolean;
+  busy: boolean;
+  connectLabel: string;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  return (
+    <div
+      className={
+        'rounded-lg border p-3 ' +
+        (connected
+          ? 'border-parchment-400/60 bg-parchment-400/5'
+          : 'border-ink-700 bg-ink-900/30')
+      }
+    >
+      <div className="mb-1 flex items-center gap-2 text-sm font-medium text-parchment-100">
+        {icon}
+        {title}
+      </div>
+      <p className="text-xs leading-relaxed text-ink-300">{description}</p>
+      <div className="mt-3">
+        {connected ? (
+          <button onClick={onDisconnect} className="btn-outline text-xs" disabled={busy}>
+            <Unplug className="h-3.5 w-3.5" /> Disconnect
+          </button>
+        ) : (
+          <button onClick={onConnect} className="btn-primary text-xs" disabled={busy}>
+            <Plug className="h-3.5 w-3.5" /> {busy ? 'Working…' : connectLabel}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

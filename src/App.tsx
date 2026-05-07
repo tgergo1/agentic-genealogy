@@ -26,15 +26,13 @@ export default function App() {
     );
   }, [settings, tree, chats]);
 
-  // Open settings if the AI key isn't configured yet — gentle nudge. The
-  // genealogy data side works key-free thanks to WikiTree, so the only
-  // truly required key is the AI provider's.
+  // Open settings if there are no API keys yet — gentle nudge.
   useEffect(() => {
     if (!hydrated) return;
-    if (!settings.ai.apiKey) {
+    if (!settings.ai.apiKey && !settings.fsConfig.clientId) {
       setSettingsOpen(true);
     }
-  }, [hydrated, settings.ai.apiKey]);
+  }, [hydrated, settings.ai.apiKey, settings.fsConfig.clientId]);
 
   // OAuth callback: when we land at /auth/familysearch/callback?code=... show
   // the dedicated callback view.
