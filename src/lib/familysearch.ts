@@ -1,44 +1,64 @@
 // FamilySearch API client.
 //
-// Auth: OAuth 2.0 Authorization Code with PKCE (S256) — public client, no secret.
-// We discovered the exact endpoints from FamilySearch's OpenID Connect
-// discovery document at https://ident.familysearch.org/.well-known/openid-configuration
-// and the integration variant at https://identint.familysearch.org/.well-known/openid-configuration.
+// Two auth modes are supported, both work for individual developers:
+//
+//  1. Authorization Code with PKCE (S256) — public client, no client_secret.
+//     The user signs in to FamilySearch in their browser; we exchange the
+//     code for an access token. This grants the user's full tree access.
+//     See https://developers.familysearch.org/main/reference/getauthorizationpage
+//     and https://developers.familysearch.org/main/reference/getaccesstoken.
+//
+//  2. Unauthenticated Session — no user login required. The token grants
+//     access to the public-data subset (Places, Date Authority, Person
+//     Search, Person Matches Query). Useful when you just want to
+//     research without logging in. The token endpoint is the same as (1)
+//     but with grant_type=unauthenticated_session.
+//
+// Endpoints use FamilySearch's CIS v3 paths (cis-web/oauth2/v3/...) which
+// match the official reference docs and support both grant types above.
+// The same paths exist on the production, beta, and integration hosts;
+// only the hostname differs.
 //
 // API base differs from auth host:
-//   prod:        https://api.familysearch.org/platform
+//   production:  https://api.familysearch.org/platform
+//   beta:        https://beta.familysearch.org/platform
 //   integration: https://api-integ.familysearch.org/platform
 //
 // All resource requests carry: Authorization: Bearer <token>
-// and Accept: application/x-gedcomx-v1+json (or application/x-gedcomx-atom+json for feeds).
+// and Accept: application/x-gedcomx-v1+json.
 
 import { readKey, writeKey, deleteKey, StorageKeys } from './storage';
 
-export type FsEnvironment = 'production' | 'integration';
+export type FsEnvironment = 'production' | 'beta' | 'integration';
 
 export interface FsEndpoints {
   authorization: string;
   token: string;
-  userinfo: string;
   apiBase: string;
-  logout: string;
 }
 
 export const FS_ENDPOINTS: Record<FsEnvironment, FsEndpoints> = {
   production: {
-    authorization: 'https://ident.familysearch.org/oauth2/authorize',
-    token: 'https://ident.familysearch.org/oauth2/token',
-    userinfo: 'https://ident.familysearch.org/userinfo',
-    logout: 'https://ident.familysearch.org/connect/logout',
+    authorization: 'https://ident.familysearch.org/cis-web/oauth2/v3/authorization',
+    token: 'https://ident.familysearch.org/cis-web/oauth2/v3/token',
     apiBase: 'https://api.familysearch.org/platform',
   },
+  beta: {
+    authorization: 'https://identbeta.familysearch.org/cis-web/oauth2/v3/authorization',
+    token: 'https://identbeta.familysearch.org/cis-web/oauth2/v3/token',
+    apiBase: 'https://beta.familysearch.org/platform',
+  },
   integration: {
-    authorization: 'https://identint.familysearch.org/oauth2/authorize',
-    token: 'https://identint.familysearch.org/oauth2/token',
-    userinfo: 'https://identint.familysearch.org/userinfo',
-    logout: 'https://identint.familysearch.org/connect/logout',
+    authorization: 'https://identint.familysearch.org/cis-web/oauth2/v3/authorization',
+    token: 'https://identint.familysearch.org/cis-web/oauth2/v3/token',
     apiBase: 'https://api-integ.familysearch.org/platform',
   },
+};
+
+export const FS_ENV_LABEL: Record<FsEnvironment, string> = {
+  production: 'Production (live)',
+  beta: 'Beta (snapshot of production)',
+  integration: 'Integration (sandbox, anyone can use)',
 };
 
 export interface FsConfig {
@@ -177,6 +197,53 @@ function parseTokenResponse(t: TokenResponse): FsTokens {
     expiresAt: Date.now() + t.expires_in * 1000,
     scope: t.scope,
   };
+}
+
+// Get an unauthenticated-session access token. No user login is involved.
+// The token only grants access to the public-data subset (Places, Date
+// Authority, Person Search, Person Matches Query). FamilySearch requires
+// the client's IP address; we look it up via api.ipify.org since browsers
+// don't have a way to read their own public IP.
+export async function startUnauthenticatedSession(
+  config: FsConfig,
+  ipAddress?: string,
+): Promise<FsTokens> {
+  const ep = FS_ENDPOINTS[config.environment];
+  const ip = ipAddress ?? (await fetchPublicIp());
+  const body = new URLSearchParams({
+    grant_type: 'unauthenticated_session',
+    client_id: config.clientId,
+    ip_address: ip,
+  });
+  const res = await fetch(ep.token, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    },
+    body,
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Unauthenticated session request failed (${res.status}): ${await res.text()}`,
+    );
+  }
+  const tokens = parseTokenResponse((await res.json()) as TokenResponse);
+  await writeKey(StorageKeys.FsTokens, tokens);
+  return tokens;
+}
+
+async function fetchPublicIp(): Promise<string> {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json');
+    const json = (await res.json()) as { ip?: string };
+    if (json.ip) return json.ip;
+  } catch {
+    /* fall through */
+  }
+  // FamilySearch accepts any well-formed IPv4; if the lookup fails we send
+  // a sentinel so the request still proceeds rather than blocking the user.
+  return '0.0.0.0';
 }
 
 export async function refreshTokens(

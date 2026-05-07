@@ -22,7 +22,9 @@ const DEFAULTS: AppSettings = {
   fsConfig: {
     clientId: '',
     redirectUri: typeof window !== 'undefined' ? `${window.location.origin}/auth/familysearch/callback` : '',
-    environment: 'production',
+    // Default to the sandbox so anyone can register and try the flow without
+    // approval. Switch to 'beta' or 'production' once you have access.
+    environment: 'integration',
   },
   theme: 'dark',
 };

@@ -41,11 +41,11 @@ first time so you can paste your keys.
 
 ### Get your keys
 
-1. **FamilySearch app key.** Sign in at
+1. **FamilySearch app key.** Free for any registered developer. Sign in at
    [developers.familysearch.org](https://developers.familysearch.org/) →
-   "My apps" → register a new app. Choose the **Web** type, set the
-   redirect URI to `http://localhost:5173/auth/familysearch/callback`,
-   and copy the app key into Settings → FamilySearch → App key.
+   "My apps" → register a new app. Choose the **Web** type, add a redirect
+   URI of `http://localhost:5173/auth/familysearch/callback`, and copy the
+   app key into Settings → FamilySearch → App key.
 2. **Claude API key.** Get one from
    [console.anthropic.com](https://console.anthropic.com/). Paste into
    Settings → AI provider, choose Anthropic, pick a model
@@ -56,12 +56,38 @@ first time so you can paste your keys.
    permit browser CORS to `api.openai.com`; if it's blocked, set Base URL
    to a local proxy.
 
+### FamilySearch environments
+
+FamilySearch runs three environments; the same OAuth endpoints
+(cis-web/oauth2/v3) live on each, only the host differs:
+
+| Environment | Hostname (auth)                       | API base                              | Access                                                             |
+| ----------- | ------------------------------------- | ------------------------------------- | ------------------------------------------------------------------ |
+| Integration | identint.familysearch.org             | api-integ.familysearch.org/platform   | Open to any registered developer (this is the default)             |
+| Beta        | identbeta.familysearch.org            | beta.familysearch.org/platform        | Requires extra approval                                            |
+| Production  | ident.familysearch.org                | api.familysearch.org/platform         | Requires Compatible Solution Program approval for live tree access |
+
+You can build and test the entire app against Integration without any
+extra approval — it's a sandbox with synthetic data.
+
 ### Connect FamilySearch
 
-Click **Connect FamilySearch** in Settings. You'll be sent to FamilySearch
-to sign in, then bounced back to `/auth/familysearch/callback` where the
-PKCE token exchange completes. The token (and refresh token, if you grant
-`offline_access`) is stored locally in IndexedDB.
+There are two modes:
+
+- **Sign in** — full Authorization Code with PKCE (S256), no client
+  secret. You're redirected to FamilySearch, sign in, and bounced back
+  to `/auth/familysearch/callback`. The access token grants the signed-in
+  user's full tree. With `offline_access` scope a refresh token is
+  returned and used automatically.
+- **No-login session** — a separate `unauthenticated_session` grant
+  returns a token without any user login. The token covers public
+  endpoints only (Person Search, Places, Date Authority, Person Matches
+  Query). Useful for keyword research and place lookups before you sign
+  in. Your public IP is included in the request as FamilySearch
+  requires; we resolve it via api.ipify.org.
+
+Both modes use the same app key. Tokens are stored only in your
+browser's IndexedDB.
 
 ### Build a tree
 
