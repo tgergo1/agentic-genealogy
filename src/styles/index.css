@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-ink-900 text-ink-100 font-sans;
+    background-image:
+      radial-gradient(at 8% 0%, rgba(200, 160, 74, 0.06) 0px, transparent 50%),
+      radial-gradient(at 92% 100%, rgba(120, 113, 108, 0.08) 0px, transparent 50%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    @apply bg-parchment-400/30 text-parchment-50;
+  }
+}
+
+@layer components {
+  .surface {
+    @apply rounded-xl border border-ink-700/70 bg-ink-800/50 backdrop-blur-sm;
+  }
+  .surface-strong {
+    @apply rounded-xl border border-ink-700 bg-ink-800 shadow-glow;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium
+           transition-colors focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-parchment-400 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary {
+    @apply btn bg-parchment-400 text-ink-900 hover:bg-parchment-300;
+  }
+  .btn-ghost {
+    @apply btn text-ink-200 hover:bg-ink-700/50;
+  }
+  .btn-outline {
+    @apply btn border border-ink-700 bg-ink-800/40 hover:bg-ink-700/40;
+  }
+  .input {
+    @apply w-full rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2 text-sm
+           placeholder:text-ink-400 focus:border-parchment-400 focus:outline-none
+           focus:ring-1 focus:ring-parchment-400;
+  }
+  .label {
+    @apply text-xs font-medium uppercase tracking-wide text-ink-300;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full border border-ink-700 bg-ink-800/60
+           px-2 py-0.5 text-xs text-ink-200;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(168, 162, 158, 0.3) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgba(168, 162, 158, 0.3);
+    border-radius: 4px;
+  }
+}
